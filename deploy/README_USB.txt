@@ -69,3 +69,14 @@ mplayer/
 ------------------
 里面是 11-02 旧版程序和媒体副本（stage3_ui、touch_test、旧 mplayer64 等），
 本包不依赖它；确认不需要可以整个删掉，不影响安装和演示。
+
+七、SSH 通道（2026-11-03 开通，日常开发首选）
+--------------------------------------------
+- 连接：ssh rkboard   （~/.ssh/config 已配：root@172.20.0.50 + ~/.ssh/rk_board_ec）
+- 传文件：scp 本地文件 rkboard:/ylh/
+- 密钥必须是 ECDSA：板载 dropbear 是裁剪版，只认 ecdsa 公钥
+  （ed25519 报 unknown algo、RSA 静默拒绝，都是这个原因）。
+- 板端两处公钥：/root/.ssh/authorized_keys 和 /etc/dropbear/authorized_keys（同一份）。
+- 2026-11-03 还修了 /etc/init.d/S50dropbear 里的 `-R`（禁止 root 登录），已去掉并重启服务。
+- 串口（COM8 1500000）退居兜底：SSH 不通时才用；注意 WorkBuddy 也会抢 COM8，用前先确认。
+

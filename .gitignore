@@ -2,3 +2,10 @@ build/
 *.o
 *.a.out
 a.out
+
+# 本机试编译产物(x86)，不入仓库
+src/media_player
+src/stage1
+src/stage2
+src/stage3
+src/touch_test

@@ -1,0 +1,14 @@
+{
+    // 本项目是 Linux 交叉编译（VM 里 aarch64-linux-gnu-gcc），
+    // Windows 本机没有 linux/fb.h 等头文件，IntelliSense 的 include 报错是假的，
+    // 真实对错以 VM 里 bash build.sh 的输出为准（当前 0 warning）。
+    // 本地直接关掉 IntelliSense：红叉、弹窗、⊗ 计数全部消失；
+    // 要补全/跳转/看 fb.h 本体 → Remote-SSH 连 VM（见指导书 §9.4）。
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src"
+    ],
+    "C_Cpp.default.cStandard": "gnu17",
+    "files.encoding": "utf8"
+}
