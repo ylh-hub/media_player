@@ -623,6 +623,11 @@ int main(int argc, char *argv[])
     pthread_create(&tid, NULL, ui_ticker, NULL);
     pthread_detach(tid);
 
+    /* 调试入口：./media_player /dev/input/event6 video
+     * 直接播第一个视频，用于验证"进入视频不秒退"（正常使用不传） */
+    if (argc > 2 && strcmp(argv[2], "video") == 0)
+        play_video(0);
+
     int x, y;
     while (touch_read(&x, &y) == 0) {
         if (g_scr == SCR_MUSIC) {
