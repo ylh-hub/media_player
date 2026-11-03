@@ -30,3 +30,6 @@ $CC_X86 $CFLAGS -DMPLAYER_BIN='"mplayer"' -o build/stage2_player_x86 \
 
 echo "编译完成，产物在 build/:"
 ls -l build/
+# 给 HTTP 部署用：板子 sh /ylh/pull.sh 会拿这个 md5 校验完整性
+md5sum build/media_player > build/media_player.md5
+echo "md5: $(cat build/media_player.md5)"
