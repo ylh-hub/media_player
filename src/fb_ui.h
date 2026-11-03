@@ -50,4 +50,18 @@ void fb_icon_back (int cx, int cy, int r, int color); /* 返回：左箭头 */
 void fb_draw_char(int x, int y, char ch, int color);
 void fb_draw_string(int x, int y, const char *s, int color);
 
+/* ---- UI v2（网易云风格）----
+ * 1) 垂直渐变背景（调用后记住两端色，fb_gradient_rect 可局部重画）
+ * 2) 圆（实心/空心）
+ * 3) 中英混排文字：ASCII 走 8x16 font16，中文走 16x16 font_cn
+ * 4) 区域快照/恢复（旋转唱片的局部动画用） */
+void fb_gradient(int top, int bottom);
+void fb_gradient_rect(int x, int y, int w, int h);
+void fb_fill_circle(int cx, int cy, int r, int color);
+void fb_draw_circle(int cx, int cy, int r, int color);
+void fb_text(int x, int y, const char *utf8, int color, int scale);
+int  fb_text_width(const char *utf8, int scale);
+void fb_region_get(int x, int y, int w, int h, int *dst);
+void fb_region_put(int x, int y, int w, int h, const int *src);
+
 #endif

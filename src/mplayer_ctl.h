@@ -33,11 +33,16 @@ void mp_song_prev(void);
 
 /* 音量 0~100（增量式：当前值 ± step）。C 不支持重载，查询用另一个名字 */
 void mp_volume(int delta);
+void mp_volume_set(int v); /* 直接设到某个值（点音量条用） */
 int  mp_volume_get(void);  /* 查询当前音量（画音量条用） */
 
 /* 进度查询（本地计时方案，见 .c 文件注释） */
 int  mp_cur_sec(void);     /* 当前已播秒数 */
 int  mp_total_sec(void);   /* 总秒数（启动时 identify 获得） */
+
+/* 按百分比跳转（0~100）：mplayer slave 的 seek <pct> 2 = 绝对百分比。
+ * 进度条点击用这个，比相对秒数稳（多次点击不会漂移） */
+void mp_seek_percent(int pct);
 
 /* 播放器当前状态（ST_STOPPED / ST_PLAYING / ST_PAUSED） */
 int  mp_state(void);
@@ -49,6 +54,9 @@ int  mp_subsys_init(void);
 /* 扫描 MEDIA_DIR 自动生成歌单/视频列表（mp_subsys_init 里已自动调用；
  * 以后加"刷新列表"按钮可直接再调它）。扩展名不区分大小写 */
 void mp_scan_media(void);
+
+/* 单实例保护：杀掉残留的旧播放器实例和孤儿 mplayer（跳过自己） */
+void mp_kill_stale(void);
 
 /* 退出前调用：停 mplayer、关 FIFO */
 void mp_subsys_deinit(void);

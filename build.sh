@@ -20,9 +20,9 @@ $CC_ARM $CFLAGS -static -o build/touch_test     src/touch_test.c
 $CC_ARM $CFLAGS -static -o build/stage2_player  \
         src/stage2_player.c src/mplayer_ctl.c -lpthread
 $CC_ARM $CFLAGS -static -o build/stage3_ui      \
-        src/stage3_ui.c src/mplayer_ctl.c src/fb_ui.c src/font16.c src/touch.c -lpthread
+        src/stage3_ui.c src/mplayer_ctl.c src/fb_ui.c src/font16.c src/font_cn.c src/touch.c src/lrc.c -lpthread -lm
 $CC_ARM $CFLAGS -static -o build/media_player   \
-        src/stage4_main.c src/mplayer_ctl.c src/fb_ui.c src/font16.c src/touch.c -lpthread
+        src/stage4_main.c src/mplayer_ctl.c src/fb_ui.c src/font16.c src/font_cn.c src/touch.c src/lrc.c -lpthread -lm
 
 # ---- VM 调试用（x86 + 系统 mplayer）：验证控制层逻辑，fb/触摸测不了 ----
 $CC_X86 $CFLAGS -DMPLAYER_BIN='"mplayer"' -o build/stage2_player_x86 \

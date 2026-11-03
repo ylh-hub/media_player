@@ -170,7 +170,9 @@ static void *ui_ticker(void *arg)
 int main(int argc, char *argv[])
 {
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("stage3_ui build %s %s\n", __DATE__, __TIME__);   /* 确认跑的是新二进制 */
+    printf("stage3_ui build %s %s\n", __DATE__, __TIME__);
+
+    mp_kill_stale();                        /* 单实例保护（不能用 killall，会自杀） */
 
     if (mp_subsys_init() != 0) return 1;
     if (fb_init() != 0)        return 1;

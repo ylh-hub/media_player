@@ -10,6 +10,10 @@
  */
 #include "fb_ui.h"
 #include "font16.h"
+#include "font_cn.h"
+
+#include <math.h>
+#include <string.h>
 
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -102,8 +106,12 @@ void fb_save_state(void)
 
 void fb_restore_state(void)
 {
-    if (g_has_saved && g_fb_fd >= 0)
-        ioctl(g_fb_fd, FBIOPUT_VSCREENINFO, &g_saved_var);
+    if (g_has_saved && g_fb_fd >= 0) {
+        /* 检查返回值：mplayer 异常退出后 fb_var 可能已经是脏值，
+         * 还原失败要能在串口看到，而不是静默花屏（P0-6） */
+        if (ioctl(g_fb_fd, FBIOPUT_VSCREENINFO, &g_saved_var) != 0)
+            perror("fb_restore_state: FBIOPUT_VSCREENINFO");
+    }
 }
 
 void fb_lock(void)   { pthread_mutex_lock(&g_lock); }
@@ -242,4 +250,160 @@ void fb_draw_string(int x, int y, const char *s, int color)
         fb_draw_char(x, y, *s++, color);
         x += 8;
     }
+}
+
+/* ---- UI v2：渐变 / 圆 / 中英混排 / 区域快照 ----
+ * 锁规则与 v1 一致：以下都是"画笔"，调用方持有 fb_lock()。
+ * 渐变色按行线性插值：t = y / SCREEN_H (0~256)。 */
+
+static int g_grad_top = 0x111C3F;
+static int g_grad_bot = 0x33406E;
+
+static int grad_lerp(int y)
+{
+    int t = (y * 256) / SCREEN_H;
+    int r1 = (g_grad_top >> 16) & 0xFF, g1 = (g_grad_top >> 8) & 0xFF, b1 = g_grad_top & 0xFF;
+    int r2 = (g_grad_bot >> 16) & 0xFF, g2 = (g_grad_bot >> 8) & 0xFF, b2 = g_grad_bot & 0xFF;
+    int r = r1 + ((r2 - r1) * t >> 8);
+    int g = g1 + ((g2 - g1) * t >> 8);
+    int b = b1 + ((b2 - b1) * t >> 8);
+    return (r << 16) | (g << 8) | b;
+}
+
+void fb_gradient(int top, int bottom)
+{
+    g_grad_top = top;
+    g_grad_bot = bottom;
+    fb_gradient_rect(0, 0, SCREEN_W, SCREEN_H);
+}
+
+void fb_gradient_rect(int x, int y, int w, int h)
+{
+    for (int j = y; j < y + h && j < SCREEN_H; j++) {
+        int c = grad_lerp(j < 0 ? 0 : j);
+        for (int i = x; i < x + w && i < SCREEN_W; i++)
+            if (i >= 0)
+                fb_draw_point(i, j, c);
+    }
+}
+
+void fb_fill_circle(int cx, int cy, int r, int color)
+{
+    for (int dy = -r; dy <= r; dy++) {
+        int half = (int)sqrt((double)r * r - (double)dy * dy);
+        for (int dx = -half; dx <= half; dx++)
+            fb_draw_point(cx + dx, cy + dy, color);
+    }
+}
+
+void fb_draw_circle(int cx, int cy, int r, int color)
+{
+    for (int a = 0; a < 3600; a++) {          /* 0.1 度一步 */
+        double rad = a * 3.14159265 / 1800.0;
+        fb_draw_point(cx + (int)(cos(rad) * r), cy + (int)(sin(rad) * r), color);
+    }
+}
+
+/* UTF-8 -> 码点；返回后 *p 指向下一个字符 */
+static unsigned utf8_next(const char **p)
+{
+    unsigned char c = (unsigned char)*(*p)++;
+    if (c < 0x80)
+        return c;
+    int len = (c < 0xE0) ? 2 : (c < 0xF0 ? 3 : 4);
+    unsigned cp = c & (0xFF >> (len + 1));
+    while (--len) {
+        unsigned char cc = (unsigned char)*(*p)++;
+        if ((cc & 0xC0) != 0x80)          /* 断码保护 */
+            return '?';
+        cp = (cp << 6) | (cc & 0x3F);
+    }
+    return cp;
+}
+
+static int cn_find(unsigned cp)
+{
+    int lo = 0, hi = cn_font_count - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (cn_cp[mid] == cp)
+            return mid;
+        if (cn_cp[mid] < cp)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return -1;                              /* 字库里没有的字 */
+}
+
+/* 单个字符：ch=ASCII 或中文码点，scale=像素放大倍数(1 原始) */
+static void draw_one(int x, int y, unsigned cp, int color, int scale, int *adv)
+{
+    if (cp < 0x80) {                        /* ASCII 8x16 */
+        if (cp < 32 || cp > 126)
+            cp = '?';
+        const unsigned char *g = font16[cp - 32];
+        for (int r = 0; r < 16; r++)
+            for (int c = 0; c < 8; c++)
+                if (g[r] & (0x80 >> c))
+                    for (int sy = 0; sy < scale; sy++)
+                        for (int sx = 0; sx < scale; sx++)
+                            fb_draw_point(x + c * scale + sx,
+                                          y + r * scale + sy, color);
+        *adv = 8 * scale;
+        return;
+    }
+    int gi = cn_find(cp);                   /* 中文 16x16 */
+    if (gi >= 0) {
+        for (int r = 0; r < 16; r++)
+            for (int c = 0; c < 16; c++)
+                if (cn_glyph[gi][r * 2 + (c >> 3)] & (0x80 >> (c & 7)))
+                    for (int sy = 0; sy < scale; sy++)
+                        for (int sx = 0; sx < scale; sx++)
+                            fb_draw_point(x + c * scale + sx,
+                                          y + r * scale + sy, color);
+    }
+    *adv = 16 * scale;                      /* 缺字也占位，避免粘连 */
+}
+
+void fb_text(int x, int y, const char *utf8, int color, int scale)
+{
+    if (utf8 == NULL)
+        return;
+    const char *p = utf8;
+    while (*p) {
+        int adv = 0;
+        unsigned cp = utf8_next(&p);
+        draw_one(x, y, cp, color, scale, &adv);
+        x += adv;
+    }
+}
+
+int fb_text_width(const char *utf8, int scale)
+{
+    if (utf8 == NULL)
+        return 0;
+    int w = 0;
+    const char *p = utf8;
+    while (*p) {
+        unsigned cp = utf8_next(&p);
+        w += (cp < 0x80) ? 8 * scale : 16 * scale;
+    }
+    return w;
+}
+
+void fb_region_get(int x, int y, int w, int h, int *dst)
+{
+    for (int j = 0; j < h; j++)
+        for (int i = 0; i < w; i++)
+            *(dst + j * w + i) =
+                (x + i >= 0 && x + i < SCREEN_W && y + j >= 0 && y + j < SCREEN_H)
+                    ? g_fb[(y + j) * SCREEN_W + x + i] : 0;
+}
+
+void fb_region_put(int x, int y, int w, int h, const int *src)
+{
+    for (int j = 0; j < h; j++)
+        for (int i = 0; i < w; i++)
+            fb_draw_point(x + i, y + j, *(src + j * w + i));
 }

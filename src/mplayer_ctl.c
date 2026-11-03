@@ -44,6 +44,11 @@ static volatile sig_atomic_t g_pid = -1;      /* mplayer 子进程 pid，-1=没�
 static int    g_fifo_fd  = -1;                /* FIFO 的 fd（O_RDWR 常开） */
 static int    g_state    = ST_STOPPED;        /* 播放器状态机 */
 static volatile sig_atomic_t g_song_done = 0; /* 自然播完标志（SIGCHLD 置位） */
+/* 代际号：每次成功启动一轮播放就 +1。
+ * SIGCHLD 只记"哪一代"播完了；上层查询时若代际对不上，说明是上一轮
+ * 停旧歌时留下的回调，直接丢弃——这是"视频刚进就退"竞态的根因修复。 */
+static volatile sig_atomic_t g_gen = 0;
+static volatile sig_atomic_t g_done_gen = 0;
 static volatile sig_atomic_t g_ready = 0;     /* mplayer 就绪标志（看到 Starting playback 才置 1） */
 
 static int    g_volume   = 70;                /* 当前音量 0~100 */
@@ -122,13 +127,19 @@ void mp_scan_media(void)
         if (e->d_name[0] == '.')
             continue;                       /* 跳过 . .. 和隐藏文件 */
         if (is_video_name(e->d_name) && g_video_num < VIDEO_MAX) {
-            snprintf(g_video_path[g_video_num],
-                     sizeof(g_video_path[0]), MEDIA_DIR "/%s", e->d_name);
-            g_videos[g_video_num++] = g_video_path[g_video_num];
+            /* 先取下标再自增：同一表达式里"自增"和"取值"未定序（UB），
+             * 之前会导致列表错位、末项空串 */
+            int i = g_video_num;
+            snprintf(g_video_path[i], sizeof(g_video_path[0]),
+                     MEDIA_DIR "/%s", e->d_name);
+            g_videos[i] = g_video_path[i];
+            g_video_num = i + 1;
         } else if (is_audio_name(e->d_name) && g_song_num < SONG_MAX) {
-            snprintf(g_song_path[g_song_num],
-                     sizeof(g_song_path[0]), MEDIA_DIR "/%s", e->d_name);
-            g_songs[g_song_num++] = g_song_path[g_song_num];
+            int i = g_song_num;
+            snprintf(g_song_path[i], sizeof(g_song_path[0]),
+                     MEDIA_DIR "/%s", e->d_name);
+            g_songs[i] = g_song_path[i];
+            g_song_num = i + 1;
         }
     }
     closedir(d);
@@ -148,6 +159,7 @@ static void sigchld_handler(int sig)
         p = waitpid(-1, NULL, WNOHANG);
         if (p > 0 && p == (pid_t)g_pid) {   /* 只有 mplayer 死了才算"歌播完了" */
             g_pid = -1;
+            g_done_gen = g_gen;             /* 记下这是哪一代的结束事件 */
             g_song_done = 1;
         }
     } while (p > 0 || (p == -1 && errno == EINTR));
@@ -312,6 +324,8 @@ int mp_start(const char *path, int is_video)
     close(fds[1]);                  /* 父进程只用读端 */
     g_pipe_fd   = fds[0];
     g_pid       = (sig_atomic_t)pid;
+    g_gen++;                        /* 新一代开始：上一轮的结束事件自动作废 */
+    g_done_gen  = 0;
     g_song_done = 0;
     g_ready     = 0;                /* 等读线程看到 Starting playback 再置 1 */
     g_state     = ST_PLAYING;
@@ -403,6 +417,25 @@ int mp_volume_get(void)             /* 当前音量值（画音量条用） */
     return g_volume;
 }
 
+void mp_volume_set(int v)
+{
+    if (v < 0)   v = 0;
+    if (v > 100) v = 100;
+    g_volume = v;
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "volume %d 1\n", g_volume);
+    mp_send(cmd);
+}
+
+void mp_seek_percent(int pct)
+{
+    if (pct < 0)   pct = 0;
+    if (pct > 100) pct = 100;
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "seek %d 2\n", pct);   /* 2 = 绝对百分比 */
+    mp_send(cmd);
+}
+
 int mp_cur_sec(void)
 {
     int v;
@@ -424,9 +457,49 @@ int mp_total_sec(void)
 int mp_state(void)              { return g_state; }
 int mp_song_finished(void)
 {
-    int v = g_song_done;
+    if (!g_song_done)
+        return 0;
     g_song_done = 0;            /* 查询即清零 */
-    return v;
+    /* 代际校验：停旧歌时 handler 也会置位，但那一代的编号已经过期，
+     * 不能再当成"当前这首播完"，否则 ticker 会误触发视频退出 */
+    if (g_done_gen != g_gen)
+        return 0;
+    return 1;
+}
+
+/* 单实例保护：扫 /proc 杀掉残留的旧实例（media_player/stage3_ui/mplayer64），
+ * 但绝不杀自己——busybox 的 `killall media_player` 会连自己一起杀（2026-11-03 实测自杀），
+ * 所以必须按 pid 精确排除。 */
+void mp_kill_stale(void)
+{
+    int mypid = getpid();
+    DIR *d = opendir("/proc");
+    struct dirent *e;
+    if (d == NULL)
+        return;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9')
+            continue;                       /* 只要数字目录（进程） */
+        int pid = atoi(e->d_name);
+        if (pid == mypid || pid <= 1)
+            continue;                       /* 不杀自己、不杀 init */
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/%s/cmdline", e->d_name);
+        FILE *fp = fopen(path, "r");
+        if (fp == NULL)
+            continue;
+        char cmd[256];
+        int n = (int)fread(cmd, 1, sizeof(cmd) - 1, fp);
+        fclose(fp);
+        if (n <= 0)
+            continue;
+        cmd[n] = '\0';
+        if (strstr(cmd, "media_player") || strstr(cmd, "stage3_ui") ||
+            strstr(cmd, "mplayer64"))
+            kill(pid, SIGKILL);
+    }
+    closedir(d);
+    usleep(300 * 1000);                     /* 给被杀进程一点收尸时间 */
 }
 
 int mp_subsys_init(void)
