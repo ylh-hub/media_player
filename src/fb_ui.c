@@ -201,6 +201,17 @@ void fb_icon_minus(int cx, int cy, int r, int color)
     fb_fill_rect(cx - r, cy - 3, 2 * r, 6, color);
 }
 
+void fb_icon_music(int cx, int cy, int r, int color)
+{
+    /* 简化音符：实心圆 + 右侧竖杆（主界面"音乐"磁贴用） */
+    int rr = r / 2;
+    for (int dy = -rr; dy <= rr; dy++)
+        for (int dx = -rr; dx <= rr; dx++)
+            if (dx * dx + dy * dy <= rr * rr)
+                fb_draw_point(cx - rr + dx, cy + rr + dy, color);
+    fb_fill_rect(cx + rr - 2, cy - r + 2, 4, r + rr, color);
+}
+
 void fb_icon_film(int cx, int cy, int r, int color)
 {
     int w = 2 * r, h = r + r / 2;

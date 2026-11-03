@@ -26,6 +26,10 @@ fi
 cp "$SRC"/media/* /ylh/media/ 2>/dev/null || true
 cp "$SRC"/lrc/*.lrc /ylh/media/ 2>/dev/null || true
 
+# 3.5) 主界面磁贴图标（缺失时程序回退到代码绘制图标）
+mkdir -p /ylh/icons
+cp "$SRC"/assets/icons/*.jpg /ylh/icons/ 2>/dev/null || true
+
 # 4) 开机自启脚本
 cp "$SRC/scripts/S99mp" /etc/init.d/S99mp
 chmod +x /etc/init.d/S99mp

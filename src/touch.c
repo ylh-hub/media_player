@@ -31,15 +31,16 @@ int touch_init(const char *dev)
     return 0;
 }
 
-int touch_read(int *x, int *y)
+int touch_read_gesture(int *x, int *y, int *dx)
 {
     struct input_event ev;
     int cur_x = -1, cur_y = -1;
+    int st_x = -1;
     int pressed = 0;
 
     for (;;) {
         if (read(g_fd, &ev, sizeof(ev)) != (ssize_t)sizeof(ev))
-            return -1;               /* 设备出错/被关闭 */
+            return -1;
 
         if (ev.type == EV_ABS) {
             if (ev.code == ABS_X || ev.code == ABS_MT_POSITION_X)
@@ -49,13 +50,32 @@ int touch_read(int *x, int *y)
         } else if (ev.type == EV_KEY && ev.code == BTN_TOUCH) {
             if (ev.value == 1) {
                 pressed = 1;
+                st_x = cur_x;          /* 按下瞬间记起点 */
             } else if (ev.value == 0 && pressed && cur_x >= 0 && cur_y >= 0) {
-                *x = cur_x;          /* 抬起瞬间锁定坐标 = 用户点击位置 */
+                *x = cur_x;
                 *y = cur_y;
-                return 0;
+                int d = (st_x >= 0) ? cur_x - st_x : 0;
+                *dx = d;
+                if (d < -60)
+                    return TOUCH_SWIPE_LEFT;
+                if (d > 60)
+                    return TOUCH_SWIPE_RIGHT;
+                return TOUCH_TAP;
             }
         }
         /* 其他事件（EV_SYN 等）直接忽略 */
+    }
+}
+
+int touch_read(int *x, int *y)
+{
+    int dx;
+    for (;;) {
+        int r = touch_read_gesture(x, y, &dx);
+        if (r < 0)
+            return -1;
+        if (r == TOUCH_TAP)
+            return 0;                  /* 滑动在这里被吞掉 = 忽略 */
     }
 }
 

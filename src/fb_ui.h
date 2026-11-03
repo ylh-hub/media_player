@@ -40,6 +40,7 @@ void fb_icon_next (int cx, int cy, int r, int color); /* 下一首：三角+竖�
 void fb_icon_prev (int cx, int cy, int r, int color); /* 上一首 */
 void fb_icon_plus (int cx, int cy, int r, int color); /* 音量+ */
 void fb_icon_minus(int cx, int cy, int r, int color); /* 音量- */
+void fb_icon_music(int cx, int cy, int r, int color); /* 音乐：音符 */
 void fb_icon_film (int cx, int cy, int r, int color); /* 视频 */
 void fb_icon_back (int cx, int cy, int r, int color); /* 返回：左箭头 */
 
