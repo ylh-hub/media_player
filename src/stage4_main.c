@@ -422,10 +422,14 @@ static void play_video(int idx)
 {
     if (idx < 0 || idx >= g_video_num)
         return;
+    int prev_scr = g_scr;
+    g_scr = SCR_VIDEO;                      /* 先切状态：ticker 立即停笔，防止
+                                             * 进度条/歌词盖到视频上闪烁 */
     fb_save_state();
     g_video_done = 0;
     g_video_playing = 0;
     if (mp_start(g_videos[idx], 1) != 0) {
+        g_scr = prev_scr;
         fb_restore_state();
         return;
     }
@@ -478,10 +482,12 @@ static void *ui_ticker(void *arg)
     (void)arg;
     for (;;) {
         usleep(500 * 1000);
-        if (g_vol_ticks > 0 && --g_vol_ticks == 0) {
-            fb_lock();
-            fb_gradient_rect(700, 16, 184, 24);   /* 盖掉音量条 */
-            fb_unlock();
+        if (g_vol_ticks > 0) {
+            if (--g_vol_ticks == 0 && !g_video_playing) {
+                fb_lock();
+                fb_gradient_rect(700, 16, 184, 24);   /* 盖掉音量条 */
+                fb_unlock();
+            }
         }
         if (mp_song_finished()) {
             if (g_scr == SCR_MUSIC) {
@@ -491,7 +497,7 @@ static void *ui_ticker(void *arg)
                 g_video_done = 1;
             }
         }
-        if (g_scr == SCR_MUSIC) {
+        if (g_scr == SCR_MUSIC && !g_video_playing) {
             fb_lock();
             draw_progress_locked();
             fb_unlock();
