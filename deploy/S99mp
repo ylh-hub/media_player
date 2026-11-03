@@ -1,0 +1,48 @@
+#!/bin/sh
+# S99mp —— 开机自启媒体播放器（RK3568 / busybox init）
+# 安装位置：/etc/init.d/S99mp
+# 手动用法：/etc/init.d/S99mp start | stop | restart
+
+BIN=/ylh/media_player
+LOG=/ylh/mp.log
+
+case "$1" in
+start)
+    [ -x "$BIN" ] || exit 0
+
+    # mplayer64 不在 PATH 时，从 /ylh 兜底复制
+    if [ ! -x /usr/bin/mplayer64 ] && [ -f /ylh/mplayer64 ]; then
+        cp /ylh/mplayer64 /usr/bin/mplayer64
+        chmod +x /usr/bin/mplayer64
+    fi
+
+    mkdir -p /ylh/media
+
+    # 等 framebuffer / 触摸设备就绪（最多 10 秒）
+    i=0
+    while [ $i -lt 10 ]; do
+        [ -e /dev/fb0 ] && [ -e /dev/input/event6 ] && break
+        sleep 1
+        i=$((i + 1))
+    done
+
+    # 日志超过 1MB 轮转一次，别写满 flash
+    if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then
+        mv "$LOG" "$LOG.1"
+    fi
+
+    echo "=== boot $(date) ===" >> "$LOG"
+    cd /ylh || exit 0
+    ./media_player /dev/input/event6 >> "$LOG" 2>&1 &
+    ;;
+stop)
+    killall media_player 2>/dev/null
+    killall mplayer64 2>/dev/null
+    ;;
+restart)
+    "$0" stop
+    sleep 1
+    "$0" start
+    ;;
+esac
+exit 0

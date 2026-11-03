@@ -201,17 +201,6 @@ void fb_icon_minus(int cx, int cy, int r, int color)
     fb_fill_rect(cx - r, cy - 3, 2 * r, 6, color);
 }
 
-void fb_icon_music(int cx, int cy, int r, int color)
-{
-    /* 简化音符：实心圆 + 右侧竖杆 */
-    int rr = r / 2;
-    for (int dy = -rr; dy <= rr; dy++)
-        for (int dx = -rr; dx <= rr; dx++)
-            if (dx * dx + dy * dy <= rr * rr)
-                fb_draw_point(cx - rr + dx, cy + rr + dy, color);
-    fb_fill_rect(cx + rr - 2, cy - r + 2, 4, r + rr, color);
-}
-
 void fb_icon_film(int cx, int cy, int r, int color)
 {
     int w = 2 * r, h = r + r / 2;
@@ -390,20 +379,4 @@ int fb_text_width(const char *utf8, int scale)
         w += (cp < 0x80) ? 8 * scale : 16 * scale;
     }
     return w;
-}
-
-void fb_region_get(int x, int y, int w, int h, int *dst)
-{
-    for (int j = 0; j < h; j++)
-        for (int i = 0; i < w; i++)
-            *(dst + j * w + i) =
-                (x + i >= 0 && x + i < SCREEN_W && y + j >= 0 && y + j < SCREEN_H)
-                    ? g_fb[(y + j) * SCREEN_W + x + i] : 0;
-}
-
-void fb_region_put(int x, int y, int w, int h, const int *src)
-{
-    for (int j = 0; j < h; j++)
-        for (int i = 0; i < w; i++)
-            fb_draw_point(x + i, y + j, *(src + j * w + i));
 }

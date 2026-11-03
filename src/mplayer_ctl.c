@@ -64,8 +64,8 @@ static volatile int g_pipe_fd = -1;           /* mplayer stdout 的读端 */
  * 由 mp_scan_media() 在启动时扫描 MEDIA_DIR 自动填充。
  * （这就是指导书里的 readdir 加分项——文件名随便起，不用改代码）
  */
-static char g_song_path[SONG_MAX][160];
-static char g_video_path[VIDEO_MAX][160];
+static char g_song_path[SONG_MAX][320];
+static char g_video_path[VIDEO_MAX][320];
 
 char *g_songs[SONG_MAX];
 int g_song_num = 0;
@@ -483,7 +483,7 @@ void mp_kill_stale(void)
         int pid = atoi(e->d_name);
         if (pid == mypid || pid <= 1)
             continue;                       /* 不杀自己、不杀 init */
-        char path[64];
+        char path[320];
         snprintf(path, sizeof(path), "/proc/%s/cmdline", e->d_name);
         FILE *fp = fopen(path, "r");
         if (fp == NULL)

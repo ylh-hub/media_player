@@ -90,6 +90,33 @@ static const char *base_name(const char *p)
     return s ? s + 1 : p;
 }
 
+/* 歌名映射：演示固定 4 首，直接映射到中文；
+ * 不做 ID3 解析（两周内没必要，也讲不清），找不到就回退拼音文件名 */
+static const struct {
+    const char *key;
+    const char *cn;
+} g_title_map[] = {
+    {"huluwa",        "葫芦娃"},
+    {"lanjingling",   "蓝精灵"},
+    {"liangzhilaohu", "两只老虎"},
+    {"qifengle",      "起风了"},
+};
+
+static const char *song_title(int idx)
+{
+    static char buf[128];
+    if (idx < 0 || idx >= g_song_num)
+        return "NO MUSIC";
+    snprintf(buf, sizeof(buf), "%s", base_name(g_songs[idx]));
+    char *dot = strrchr(buf, '.');
+    if (dot)
+        *dot = 0;
+    for (size_t i = 0; i < sizeof(g_title_map) / sizeof(g_title_map[0]); i++)
+        if (strcmp(buf, g_title_map[i].key) == 0)
+            return g_title_map[i].cn;
+    return buf;
+}
+
 static void mmss(int sec, char *buf, size_t n)
 {
     if (sec < 0) sec = 0;
@@ -180,13 +207,8 @@ static void draw_vinyl_locked(void)
 
 static void draw_info_locked(void)
 {
-    char title[128] = "NO MUSIC";
     char meta[128];
-    if (g_song_num > 0) {
-        snprintf(title, sizeof(title), "%s", base_name(g_songs[g_song_cur]));
-        char *dot = strrchr(title, '.');
-        if (dot) *dot = 0;
-    }
+    const char *title = song_title(g_song_cur);
     char dur[16];
     mmss(mp_total_sec(), dur, sizeof(dur));
     snprintf(meta, sizeof(meta), "MP3   %s   LOCAL", dur);
@@ -348,11 +370,7 @@ static void draw_list_panel(void)
         snprintf(idx, sizeof(idx), "%d", i + 1);
         fb_text(664, y + 14, idx, i == g_song_cur ? CLR_RED : CLR_PDIM, 1);
 
-        char title[128];
-        snprintf(title, sizeof(title), "%s", base_name(g_songs[i]));
-        char *dot = strrchr(title, '.');
-        if (dot) *dot = 0;
-        text_clip(700, y + 14, title,
+        text_clip(700, y + 14, song_title(i),
                   i == g_song_cur ? CLR_RED : CLR_PTXT, 1, 250);
     }
     fb_unlock();
