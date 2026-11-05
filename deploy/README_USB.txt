@@ -9,11 +9,15 @@ mplayer/
 │   └── mplayer64      音视频后端（板子上没有就装上）
 ├── media/             4 首歌 + 2 个视频（1.mp4、04.flv）
 ├── lrc/               4 首歌词（和 mp3 同名，播放时自动加载）
+├── assets/icons/      主界面磁贴图标（music.jpg/album.jpg，装到 /ylh/icons）
 ├── scripts/
-│   ├── install.sh     一键安装到板子（复制程序/媒体/自启脚本）
+│   ├── install.sh     一键安装到板子（复制程序/媒体/图标/自启脚本）
 │   ├── S99mp          开机自启脚本（装到 /etc/init.d/）
 │   └── run.sh         手动重启播放器
 └── README.txt         本文件
+
+相册图片不放 U 盘：直接拷到板子 /ylh/photos（jpg/png/bmp），
+或 scp：scp 照片.jpg rkboard:/ylh/photos/ 然后 /etc/init.d/S99mp restart。
 
 二、第一次使用（约 2 分钟）
 --------------------------
