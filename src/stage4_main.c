@@ -21,6 +21,7 @@
 #include <lrc.h>
 #include <image.h>
 #include <album.h>
+#include <modbus_slave.h>
 
 #include <math.h>
 #include <pthread.h>
@@ -670,6 +671,33 @@ static void *ui_ticker(void *arg)
     (void)arg;
     for (;;) {
         usleep(500 * 1000);
+
+        /* Modbus 命令：协议线程只入队，这里执行（避免跨线程碰 UI） */
+        {
+            unsigned short cmd;
+            if (mbrtu_take_cmd(&cmd)) {
+                if (cmd == 1) {                     /* 播放/暂停切换 */
+                    if (mp_state() == ST_STOPPED) {
+                        mbrtu_set_last_error(1);    /* 没有在播 */
+                    } else {
+                        mp_pause_toggle();
+                        mbrtu_set_last_error(0);
+                    }
+                } else if (cmd == 2 || cmd == 3) {  /* 下一首 / 上一首 */
+                    if (g_song_num <= 0) {
+                        mbrtu_set_last_error(1);
+                    } else {
+                        song_step(cmd == 2 ? +1 : -1);
+                        if (g_scr == SCR_MUSIC)
+                            draw_music();
+                        mbrtu_set_last_error(0);
+                    }
+                } else {
+                    mbrtu_set_last_error(2);
+                }
+            }
+        }
+
         if (g_vol_ticks > 0) {
             if (--g_vol_ticks == 0 && !g_video_playing) {
                 fb_lock();
@@ -854,6 +882,11 @@ int main(int argc, char *argv[])
     mp_kill_stale();
 
     if (mp_subsys_init() != 0) return 1;
+
+    /* Modbus-RTU 从站：起一个 detached 线程，读/写 /tmp/modbus_in|out */
+    if (mbrtu_slave_start() != 0)
+        fprintf(stderr, "warn: modbus slave not started\n");
+
     if (fb_init() != 0)        return 1;
     if (touch_init(argc > 1 ? argv[1] : NULL) != 0) return 1;
     album_scan();

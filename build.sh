@@ -25,7 +25,7 @@ $CC_ARM $CFLAGS -static -o build/stage3_ui      \
         src/stage3_ui.c src/mplayer_ctl.c src/fb_ui.c src/font16.c src/font_cn.c src/touch.c src/lrc.c -lpthread -lm
 $CC_ARM $CFLAGS -static -o build/media_player   \
         src/stage4_main.c src/mplayer_ctl.c src/fb_ui.c src/font16.c src/font_cn.c src/touch.c src/lrc.c \
-        src/image.c src/album.c build/stb_image.o -lpthread -lm
+        src/image.c src/album.c src/modbus_slave.c src/modbus_rtu.c build/stb_image.o -lpthread -lm
 
 # ---- VM 调试用（x86 + 系统 mplayer）：验证控制层逻辑，fb/触摸测不了 ----
 $CC_X86 $CFLAGS -DMPLAYER_BIN='"mplayer"' -o build/stage2_player_x86 \
@@ -36,3 +36,6 @@ ls -l build/
 # 给 HTTP 部署用：板子 sh /ylh/pull.sh 会拿这个 md5 校验完整性
 md5sum build/media_player > build/media_player.md5
 echo "md5: $(cat build/media_player.md5)"
+
+# 板侧联调脚本：随 HTTP 服务一起提供（wget 到板子上跑）
+cp tests/board_modbus_test.sh build/board_modbus_test.sh
