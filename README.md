@@ -8,16 +8,12 @@
 ![ui](https://img.shields.io/badge/UI-framebuffer%20自绘-red)
 ![build](https://img.shields.io/badge/build-aarch64--linux--gnu--gcc%20--static-green)
 
-<!-- 界面截图放 docs/screenshots/ 后在下方表格中启用 -->
+## 界面一览
 
-| 模块 | 截图 |
+| ![](docs/screenshots/launcher.jpg)<br>**主启动器**：音乐 / 视频 / 相册 / 退出 | ![](docs/screenshots/music.jpg)<br>**音乐页**：黑胶唱片 + LRC 歌词逐行高亮 |
 |---|---|
-| 主启动器（四磁贴） | `docs/screenshots/launcher.png` |
-| 音乐页（黑胶 + LRC 歌词） | `docs/screenshots/music.png` |
-| 歌单侧栏 | `docs/screenshots/playlist.png` |
-| 视频全屏（fbdev2） | `docs/screenshots/video.png` |
-| 相册（缩略图网格 / 大图） | `docs/screenshots/album.png` |
-| U 盘安装包 | `docs/screenshots/usb.png` |
+| ![](docs/screenshots/playlist.jpg)<br>**歌单侧栏**：点行切歌，当前行高亮 | ![](docs/screenshots/video.jpg)<br>**视频全屏**：mplayer fbdev2 输出 |
+| ![](docs/screenshots/album.jpg)<br>**相册**：stb_image 缩略图网格 | ![](docs/screenshots/usb.png)<br>**U 盘安装包**：插盘一键安装 |
 
 ## 功能
 
