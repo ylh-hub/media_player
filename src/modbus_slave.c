@@ -86,20 +86,22 @@ static void snap_refresh(void)
 {
     struct timespec ts;
     uint32_t up;
-    int v;
+    mp_snapshot_t s;
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
     up = (uint32_t)ts.tv_sec;
 
+    /* 一次加锁取齐：避免一帧内读到"曲目 5、总数 3"这种撕裂，
+     * 同时消除协议线程直接读 UI 线程变量的数据竞争 */
+    mp_get_snapshot(&s);
+
     g_snap[0] = 0x0100;                                   /* 协议版本 v1.0 */
-    g_snap[1] = (uint16_t)mp_state();                     /* 0 停 1 播 2 暂停 */
-    g_snap[2] = (g_song_cur < 0) ? 0xFFFF : (uint16_t)g_song_cur;
-    g_snap[3] = (g_song_num < 0) ? 0      : (uint16_t)g_song_num;
-
-    v = mp_cur_sec();   g_snap[4] = (v < 0) ? 0xFFFF : (uint16_t)v;
-    v = mp_total_sec(); g_snap[5] = (v < 0) ? 0xFFFF : (uint16_t)v;
-
-    g_snap[6] = (uint16_t)mp_volume_get();
+    g_snap[1] = (uint16_t)s.state;                        /* 0 停 1 播 2 暂停 */
+    g_snap[2] = (s.song_cur < 0)  ? 0xFFFF : (uint16_t)s.song_cur;
+    g_snap[3] = (s.song_num < 0)  ? 0      : (uint16_t)s.song_num;
+    g_snap[4] = (s.cur_sec < 0)   ? 0xFFFF : (uint16_t)s.cur_sec;
+    g_snap[5] = (s.total_sec < 0) ? 0xFFFF : (uint16_t)s.total_sec;
+    g_snap[6] = (uint16_t)s.volume;
     g_snap[7] = 0;                                        /* 命令寄存器读恒 0 */
 
     pthread_mutex_lock(&g_lock);

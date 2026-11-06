@@ -47,6 +47,22 @@ void mp_seek_percent(int pct);
 /* 播放器当前状态（ST_STOPPED / ST_PLAYING / ST_PAUSED） */
 int  mp_state(void);
 
+/* 线程安全快照：把一个请求要用的状态量一次取齐。
+ * 协议线程只调这个，不要直接读 g_song_cur / g_volume / g_state。 */
+typedef struct {
+    int state;       /* ST_* */
+    int volume;      /* 0~100 */
+    int song_cur;    /* 0-based，可能为 -1 */
+    int song_num;    /* 曲目总数 */
+    int cur_sec;     /* 当前秒，可能为 -1 */
+    int total_sec;   /* 总秒，可能为 -1 */
+} mp_snapshot_t;
+
+void mp_get_snapshot(mp_snapshot_t *s);
+
+/* 线程安全地设置当前曲目下标（替代直接写 g_song_cur） */
+void mp_song_set_cur(int idx);
+
 /* 程序总入口前调用一次：建 FIFO、装 SIGCHLD、启动进度定时线程。
  * 返回 0 成功；失败返回 -1（调用方自行决定退出） */
 int  mp_subsys_init(void);

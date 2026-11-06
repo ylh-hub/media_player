@@ -159,7 +159,9 @@ int mbrtu_parse(const uint8_t *frame, int len, uint8_t *resp, int resp_max)
         if (fc == MBRTU_FC_WRITE && len == 8) {
             uint16_t off = (uint16_t)((frame[2] << 8) | frame[3]);
             uint16_t val = (uint16_t)((frame[4] << 8) | frame[5]);
-            if (g_hooks.write && off < MBRTU_REG_COUNT)
+            /* 广播写命令（7 号）会让总线上所有从站一起切歌，现场风险大：
+             * 只允许广播写音量这类设置寄存器，命令寄存器静默丢弃 */
+            if (g_hooks.write && off < MBRTU_REG_COUNT && off != MBRTU_REG_CMD)
                 (void)g_hooks.write((int)off, val);
         }
         return 0;

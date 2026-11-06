@@ -155,6 +155,13 @@ int main(void)
     r = mbrtu_parse(req, n, resp, sizeof(resp));
     ok("U9b broadcast read -> silent", r == 0);
 
+    /* U9c 广播写命令 -> 静默丢弃、不执行（防止总线上所有从站一起切歌） */
+    g_cmd_pending = 0; g_accept_cnt = 0; g_regs[11] = 0;
+    n = mk(req, 0x00, 0x06, 7, 2);
+    r = mbrtu_parse(req, n, resp, sizeof(resp));
+    ok("U9c broadcast cmd -> silent + not exec",
+       r == 0 && g_cmd_pending == 0 && g_accept_cnt == 0);
+
     /* U10 边界：音量 101 / count 0 / count 33 / count 12 */
     n = mk(req, 0x01, 0x06, 6, 101);
     r = mbrtu_parse(req, n, resp, sizeof(resp));

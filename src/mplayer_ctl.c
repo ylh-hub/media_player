@@ -53,6 +53,12 @@ static volatile sig_atomic_t g_ready = 0;     /* mplayer 就绪标志（看到 S
 
 static int    g_volume   = 70;                /* 当前音量 0~100 */
 
+/* 状态量互斥锁：g_state / g_volume / g_song_cur / g_song_num 会被
+ * UI 线程写、协议线程读，用这把锁保护，避免形式上的 data race。
+ * 注意：g_song_num 只在 mp_scan_media()（init 阶段、协议线程启动前）写，
+ * 以后若加"运行时刷新列表"，也要在这把锁里改。 */
+static pthread_mutex_t g_ctl_lock = PTHREAD_MUTEX_INITIALIZER;
+
 /* 进度共享数据：读线程写，主线程读，用互斥锁保护 */
 static pthread_mutex_t g_pos_lock = PTHREAD_MUTEX_INITIALIZER;
 static float  g_cur_sec   = 0.0f;
@@ -217,7 +223,7 @@ static void *ticker_thread(void *arg)
     (void)arg;
     for (;;) {
         usleep(500 * 1000);
-        if (g_state == ST_PLAYING && g_pid > 0)
+        if (mp_state() == ST_PLAYING && g_pid > 0)
             mp_send("get_time_pos\n");
     }
     return NULL;                    /* 不会走到这里 */
@@ -328,7 +334,9 @@ int mp_start(const char *path, int is_video)
     g_done_gen  = 0;
     g_song_done = 0;
     g_ready     = 0;                /* 等读线程看到 Starting playback 再置 1 */
+    pthread_mutex_lock(&g_ctl_lock);
     g_state     = ST_PLAYING;
+    pthread_mutex_unlock(&g_ctl_lock);
     pthread_sigmask(SIG_SETMASK, &old, NULL);   /* 恢复信号屏蔽 */
 
     pthread_t tid;
@@ -370,60 +378,99 @@ void mp_stop(void)
         waitpid(pid, NULL, 0);      /* 兜底路径自己回收（handler 可能已回收，无害） */
         g_pid = -1;
     }
+    pthread_mutex_lock(&g_ctl_lock);
     g_state = ST_STOPPED;
+    pthread_mutex_unlock(&g_ctl_lock);
 }
 
 void mp_pause_toggle(void)
 {
     /* mplayer 的 pause 指令本身就是"播着就暂停、暂停着就继续"，
      * 程序侧只需要同步维护状态机 */
-    if (g_state == ST_PLAYING) {
-        mp_send("pause\n");
+    int st;
+
+    pthread_mutex_lock(&g_ctl_lock);
+    st = g_state;
+    if (st == ST_PLAYING)
         g_state = ST_PAUSED;
-    } else if (g_state == ST_PAUSED) {
-        mp_send("pause\n");
+    else if (st == ST_PAUSED)
         g_state = ST_PLAYING;
-    }
+    pthread_mutex_unlock(&g_ctl_lock);
+
+    if (st == ST_PLAYING || st == ST_PAUSED)
+        mp_send("pause\n");
 }
 
 void mp_song_next(void)
 {
-    if (g_song_num == 0)
+    int n;
+
+    pthread_mutex_lock(&g_ctl_lock);
+    if (g_song_num == 0) {
+        pthread_mutex_unlock(&g_ctl_lock);
         return;
+    }
     g_song_cur = (g_song_cur + 1) % g_song_num;
-    mp_start(g_songs[g_song_cur], 0);
+    n = g_song_cur;
+    pthread_mutex_unlock(&g_ctl_lock);
+
+    mp_start(g_songs[n], 0);
 }
 
 void mp_song_prev(void)
 {
-    if (g_song_num == 0)
+    int n;
+
+    pthread_mutex_lock(&g_ctl_lock);
+    if (g_song_num == 0) {
+        pthread_mutex_unlock(&g_ctl_lock);
         return;
+    }
     g_song_cur = (g_song_cur - 1 + g_song_num) % g_song_num;
-    mp_start(g_songs[g_song_cur], 0);
+    n = g_song_cur;
+    pthread_mutex_unlock(&g_ctl_lock);
+
+    mp_start(g_songs[n], 0);
 }
 
 void mp_volume(int delta)
 {
+    int v;
+    char cmd[32];
+
+    pthread_mutex_lock(&g_ctl_lock);
     g_volume += delta;
     if (g_volume < 0)   g_volume = 0;
     if (g_volume > 100) g_volume = 100;
-    char cmd[32];
-    snprintf(cmd, sizeof(cmd), "volume %d 1\n", g_volume);
+    v = g_volume;
+    pthread_mutex_unlock(&g_ctl_lock);
+
+    snprintf(cmd, sizeof(cmd), "volume %d 1\n", v);
     mp_send(cmd);
 }
 
 int mp_volume_get(void)             /* 当前音量值（画音量条用） */
 {
-    return g_volume;
+    int v;
+
+    pthread_mutex_lock(&g_ctl_lock);
+    v = g_volume;
+    pthread_mutex_unlock(&g_ctl_lock);
+    return v;
 }
 
 void mp_volume_set(int v)
 {
+    char cmd[32];
+
     if (v < 0)   v = 0;
     if (v > 100) v = 100;
+
+    pthread_mutex_lock(&g_ctl_lock);
     g_volume = v;
-    char cmd[32];
-    snprintf(cmd, sizeof(cmd), "volume %d 1\n", g_volume);
+    pthread_mutex_unlock(&g_ctl_lock);
+
+    snprintf(cmd, sizeof(cmd), "volume %d 1\n", v);
     mp_send(cmd);
 }
 
@@ -454,7 +501,41 @@ int mp_total_sec(void)
     return v;
 }
 
-int mp_state(void)              { return g_state; }
+int mp_state(void)
+{
+    int st;
+
+    pthread_mutex_lock(&g_ctl_lock);
+    st = g_state;
+    pthread_mutex_unlock(&g_ctl_lock);
+    return st;
+}
+
+void mp_song_set_cur(int idx)
+{
+    pthread_mutex_lock(&g_ctl_lock);
+    g_song_cur = idx;
+    pthread_mutex_unlock(&g_ctl_lock);
+}
+
+void mp_get_snapshot(mp_snapshot_t *s)
+{
+    if (!s)
+        return;
+
+    /* 先取控制类状态，再取进度；两把锁不嵌套，避免死锁 */
+    pthread_mutex_lock(&g_ctl_lock);
+    s->state    = g_state;
+    s->volume   = g_volume;
+    s->song_cur = g_song_cur;
+    s->song_num = g_song_num;
+    pthread_mutex_unlock(&g_ctl_lock);
+
+    pthread_mutex_lock(&g_pos_lock);
+    s->cur_sec   = (int)g_cur_sec;
+    s->total_sec = (int)g_total_sec;
+    pthread_mutex_unlock(&g_pos_lock);
+}
 int mp_song_finished(void)
 {
     if (!g_song_done)

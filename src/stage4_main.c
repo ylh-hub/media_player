@@ -583,7 +583,7 @@ static void start_song(int idx)
 {
     if (idx < 0 || idx >= g_song_num)
         return;
-    g_song_cur = idx;
+    mp_song_set_cur(idx);          /* 线程安全写（协议线程会读这个值） */
     mp_start(g_songs[idx], 0);
     lrc_load(g_songs[idx]);
     g_lyric_idx = -2;
@@ -603,7 +603,7 @@ static void enter_music(void)
     g_scr = SCR_MUSIC;
     if (g_song_num > 0 && mp_state() == ST_STOPPED) {
         if (g_song_cur < 0 || g_song_cur >= g_song_num)
-            g_song_cur = 0;
+            mp_song_set_cur(0);
         start_song(g_song_cur);
     } else if (g_song_num > 0) {
         lrc_load(g_songs[g_song_cur]);

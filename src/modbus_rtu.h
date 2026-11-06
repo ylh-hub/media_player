@@ -16,6 +16,7 @@
 #define MBRTU_FC_WRITE       0x06   /* 功能码：写单寄存器 */
 #define MBRTU_MAX_ADU        256    /* RTU 最大帧长（规范） */
 #define MBRTU_REG_COUNT      12     /* 本设备寄存器个数（0~11） */
+#define MBRTU_REG_CMD        7      /* 命令寄存器 offset（广播不允许写） */
 #define MBRTU_MAX_READ_REGS  125    /* 规范允许一次最多读 125 个 */
 
 /* ===== 二、业务回调（把协议和播放器解耦） =====
