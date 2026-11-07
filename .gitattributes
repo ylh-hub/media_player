@@ -1,2 +1,8 @@
 # 板子上的 /bin/sh 不认 CRLF：shell 脚本强制 LF 检出
 *.sh text eol=lf
+# GitHub 语言统计修正：本项目是纯 C（linguist 把 .h 误分类成 C++）
+*.c linguist-language=C
+*.h linguist-language=C
+
+# stb_image 为第三方单头库，不计入语言统计
+src/stb_image.h linguist-vendored
