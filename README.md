@@ -181,6 +181,49 @@ bash build.sh          # 产出 build/：ARM 静态可执行 + md5
 `/etc/init.d/S99mp`：等待 `/dev/fb0` 与触摸设备就绪（最多 10s）→ 日志轮转 → 拉起播放器。
 手动管理：`/etc/init.d/S99mp start | stop | restart`。
 
+### 4. 运行与验证（10 分钟跑通）
+
+```sh
+# 1) 重启并确认进程
+/etc/init.d/S99mp restart
+ps | grep media_player
+
+# 2) 确认烧录版本（应与 build/media_player.md5 一致）
+md5sum /ylh/media_player
+
+# 3) 本机控制面（UNIX 域）
+echo status | socat - UNIX-CONNECT:/run/media_player.sock
+# 或仓库自带客户端
+/tmp/ctl_client /run/media_player.sock status
+
+# 4) 局域网控制面（TCP 19000）
+printf 'status\n' | nc <板子IP> 19000
+printf 'next\n'   | nc <板子IP> 19000
+
+# 5) Modbus-RTU（FIFO 注入，读 12 个寄存器）
+printf '\001\003\000\000\000\014\105\317' > /tmp/modbus_in
+timeout 1 cat /tmp/modbus_out | od -An -tx1
+# 期望：01 03 18 ... 共 29 字节
+```
+
+**预期结果**
+
+- `status` 返回 `{"state":"playing","song":2,"song_num":4,"cur_sec":33,"total_sec":176,"vol":70}`
+- `next` 返回 `OK seq=<n>`，再次 `status` 曲目号 +1
+- Modbus 返回 29 字节：首字节 `01`、功能码 `03`、字节数 `18`
+
+**吞吐基线（实测）**
+
+- 单客户端串行 200 条：20.6s（受 100ms GUI tick 限制，每条一个 tick）
+- 批量 16 条/轮 × 12 轮 = 192 条：**1.88s**
+- 网络控制与 Modbus 同时工作，状态一致
+
+**已知限制**
+
+- UDP 广播发现未启用（多网卡/广播噪声，留后续）
+- TCP 无鉴权，仅建议内网使用
+- 命令在 GUI 线程执行，单条延迟上限约 100ms
+
 ## 媒体目录约定
 
 ```
