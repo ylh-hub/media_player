@@ -22,6 +22,9 @@
 #include <image.h>
 #include <album.h>
 #include <modbus_slave.h>
+#include <ctl_core.h>
+#include <ctl_unix.h>
+#include <ctl_tcp.h>
 
 #include <math.h>
 #include <pthread.h>
@@ -666,11 +669,144 @@ static void play_video(int idx)
 
 /* ================= 后台线程 ================= */
 
+static void ctl_status_build(char *buf, int cap)
+{
+    mp_snapshot_t s;
+    const char *st;
+
+    mp_get_snapshot(&s);
+    if (s.state == ST_PLAYING)
+        st = "playing";
+    else if (s.state == ST_PAUSED)
+        st = "paused";
+    else
+        st = "stopped";
+
+    snprintf(buf, (size_t)cap,
+             "{\"state\":\"%s\",\"song\":%d,\"song_num\":%d,"
+             "\"cur_sec\":%d,\"total_sec\":%d,\"vol\":%d}",
+             st, s.song_cur, s.song_num, s.cur_sec, s.total_sec, s.volume);
+}
+
+static void ctl_list_build(char *buf, int cap)
+{
+    int n = 0;
+    int i;
+
+    n += snprintf(buf + n, (size_t)(cap - n), "[");
+    for (i = 0; i < g_song_num && n < cap - 32; i++) {
+        n += snprintf(buf + n, (size_t)(cap - n), "%s\"%s\"",
+                      i ? "," : "", song_title(i));
+    }
+    snprintf(buf + n, (size_t)(cap - n), "]");
+}
+
+/* 命令执行：只在 GUI 线程（ui_ticker）调用 */
+static void ctl_execute(const ctl_cmd_t *c, ctl_done_t *d)
+{
+    d->seq = c->seq;
+    d->conn_id = c->conn_id;
+    d->code = CTL_OK;
+    d->payload[0] = '\0';
+
+    switch (c->id) {
+    case CTL_PLAY:
+        if (mp_state() == ST_STOPPED && g_song_num > 0)
+            start_song(g_song_cur);
+        break;
+    case CTL_PAUSE:
+        if (mp_state() == ST_PLAYING)
+            mp_pause_toggle();
+        break;
+    case CTL_TOGGLE:
+        if (mp_state() != ST_STOPPED)
+            mp_pause_toggle();
+        break;
+    case CTL_STOP:
+        mp_stop();
+        break;
+    case CTL_NEXT:
+        if (g_song_num <= 0) {
+            d->code = CTL_E_EXEC;
+            break;
+        }
+        song_step(+1);
+        break;
+    case CTL_PREV:
+        if (g_song_num <= 0) {
+            d->code = CTL_E_EXEC;
+            break;
+        }
+        song_step(-1);
+        break;
+    case CTL_SEEK: {
+        int pct;
+        if (c->arg < 0) {
+            pct = -c->arg;
+        } else {
+            int total = mp_total_sec();
+            pct = (total > 0) ? (c->arg * 100 / total) : 0;
+        }
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+        mp_seek_percent(pct);
+        break;
+    }
+    case CTL_PLAY_INDEX:
+        if (c->arg < 0 || c->arg >= g_song_num) {
+            d->code = CTL_E_RANGE;
+            break;
+        }
+        start_song(c->arg);
+        break;
+    case CTL_VOL:
+        if (c->arg < 0 || c->arg > 100) {
+            d->code = CTL_E_RANGE;
+            break;
+        }
+        mp_volume_set(c->arg);
+        break;
+    case CTL_STATUS:
+        ctl_status_build(d->payload, (int)sizeof(d->payload));
+        break;
+    case CTL_LIST:
+        ctl_list_build(d->payload, (int)sizeof(d->payload));
+        break;
+    default:
+        d->code = CTL_E_UNKNOWN;
+        break;
+    }
+
+    if (d->code != CTL_OK) {
+        snprintf(d->payload, sizeof(d->payload), "ERR %d seq=%u", d->code, c->seq);
+    } else if (d->payload[0] == '\0') {
+        snprintf(d->payload, sizeof(d->payload), "OK seq=%u", c->seq);
+    }
+}
+
 static void *ui_ticker(void *arg)
 {
     (void)arg;
+    int tick = 0;
     for (;;) {
-        usleep(500 * 1000);
+        usleep(100 * 1000);
+
+        /* 控制面命令：每 100ms 最多 16 条，GUI 线程执行 */
+        {
+            ctl_cmd_t cmds[CTL_TICK_BATCH];
+            int n = ctl_take_cmd(cmds, CTL_TICK_BATCH);
+            int i;
+            for (i = 0; i < n; i++) {
+                ctl_done_t d;
+                memset(&d, 0, sizeof(d));
+                ctl_execute(&cmds[i], &d);
+                (void)ctl_push_done(cmds[i].transport, &d);
+            }
+        }
+
+        if (++tick < 5)
+            continue;              /* 业务刷新保持 500ms 节奏 */
+        tick = 0;
 
         /* Modbus 命令：协议线程只入队，这里执行（避免跨线程碰 UI） */
         {
@@ -886,6 +1022,14 @@ int main(int argc, char *argv[])
     /* Modbus-RTU 从站：起一个 detached 线程，读/写 /tmp/modbus_in|out */
     if (mbrtu_slave_start() != 0)
         fprintf(stderr, "warn: modbus slave not started\n");
+
+    /* 控制面：UNIX 域 socket（/run/media_player.sock） */
+    if (ctl_unix_start() != 0)
+        fprintf(stderr, "warn: ctl unix socket not started\n");
+
+    /* 控制面：TCP 0.0.0.0:19000 */
+    if (ctl_tcp_start() != 0)
+        fprintf(stderr, "warn: ctl tcp not started\n");
 
     if (fb_init() != 0)        return 1;
     if (touch_init(argc > 1 ? argv[1] : NULL) != 0) return 1;

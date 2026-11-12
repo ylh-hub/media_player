@@ -84,6 +84,33 @@
 - 广播只允许写音量；广播写命令静默丢弃（防止总线上所有从站一起切歌）
 - 未做 24h/48h 长稳、TSan、fuzz
 
+## 网络控制（v1）
+
+> Modbus 之外的本机/局域网控制面：UNIX 域 + TCP + JSON 状态。
+> 网络线程只入队，GUI 线程执行；socket 只由 IO 线程写。
+
+| 通道 | 地址 | 说明 |
+|---|---|---|
+| UNIX 域 | `/run/media_player.sock`（回退 `/tmp`） | 0660，SO_PEERCRED 校验 uid |
+| TCP | `0.0.0.0:19000` | epoll 单线程，最多 8 客户端 |
+
+命令（一行一条，`\n` 结尾）：`play` / `pause` / `toggle` / `stop` / `next` / `prev` / `play <idx>` / `seek <sec 或 pct%>` / `vol <0-100>` / `status` / `list` / `quit`（只关连接）。
+
+响应：`OK seq=<n>` / `ERR <code> seq=<n>`；`status` 返回
+`{"state":"playing","song":2,"song_num":4,"cur_sec":33,"total_sec":176,"vol":70}`。
+
+错误码：1 语法 / 2 参数 / 3 越界 / 4 未知命令 / 5 执行失败 / 6 忙。
+
+```sh
+# 板子上
+echo status | socat - UNIX-CONNECT:/run/media_player.sock
+# 同一局域网
+printf 'status\n' | nc 172.20.0.50 19000
+```
+
+已验证：单客户端、粘包、双客户端并发、200 条串行、192 条批量（1.88s）、断线重连。
+已知限制：UDP 发现暂未启用（多网卡/广播噪声，留后续）；TCP 无鉴权，仅建议内网使用。
+
 ## 架构
 
 ```
